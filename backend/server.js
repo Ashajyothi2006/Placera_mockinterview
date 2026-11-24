@@ -18,49 +18,69 @@ const {
 
 const app = express();
 
-// Flexible CORS setup to allow localhost/127.0.0.1 on any port and prevent CORS blocking
+// Flexible CORS setup to allow frontend origins (Render, Vercel, Netlify, localhost, etc.)
 const allowedOrigins = (origin, callback) => {
-    // Allow non-browser requests (e.g. curl, server-to-server, Postman)
+    // Allow non-browser requests (e.g. curl, server-to-server, Postman, health checks)
     if (!origin) return callback(null, true);
 
-    // If FRONTEND_URL is explicitly set, check it
-    if (process.env.FRONTEND_URL) {
-        const envOrigins = process.env.FRONTEND_URL.split(',').map(u => u.trim());
-        if (envOrigins.includes(origin) || envOrigins.includes('*')) {
+    const cleanOrigin = origin.toLowerCase().trim().replace(/\/+$/, '');
+
+    // If FRONTEND_URL is explicitly set, check it (supports comma-separated list or '*')
+    if (process.env.FRONTEND_URL && process.env.FRONTEND_URL.trim()) {
+        const envOrigins = process.env.FRONTEND_URL.split(',')
+            .map(u => u.toLowerCase().trim().replace(/\/+$/, ''));
+        if (envOrigins.includes(cleanOrigin) || envOrigins.includes('*')) {
             return callback(null, true);
         }
     }
 
-    // Allow any localhost or 127.0.0.1 on any port (e.g. 5173, 5174, 3000, 4173)
-    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+    // Allow Render deployment domains (*.onrender.com)
+    if (/^https?:\/\/.*\.onrender\.com$/i.test(cleanOrigin)) {
+        return callback(null, true);
+    }
+
+    // Allow any placera-related origin / subdomains
+    if (/placera/i.test(cleanOrigin)) {
         return callback(null, true);
     }
 
     // Allow Vercel deployment domains (*.vercel.app)
-    if (/^https:\/\/.*\.vercel\.app$/.test(origin)) {
+    if (/^https?:\/\/.*\.vercel\.app$/i.test(cleanOrigin)) {
+        return callback(null, true);
+    }
+
+    // Allow Netlify deployment domains (*.netlify.app)
+    if (/^https?:\/\/.*\.netlify\.app$/i.test(cleanOrigin)) {
+        return callback(null, true);
+    }
+
+    // Allow any localhost or 127.0.0.1 on any port (e.g. 5173, 5174, 3000, 4173)
+    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(cleanOrigin)) {
         return callback(null, true);
     }
 
     // Allow local network IP addresses for LAN testing
-    if (/^https?:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?$/.test(origin)) {
+    if (/^https?:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?$/i.test(cleanOrigin)) {
         return callback(null, true);
     }
 
-    // In development mode, allow all origins
-    if (process.env.NODE_ENV !== 'production') {
+    // In development mode or if no FRONTEND_URL is explicitly configured, allow the origin
+    if (process.env.NODE_ENV !== 'production' || !process.env.FRONTEND_URL) {
         return callback(null, true);
     }
 
-    return callback(new Error('Blocked by CORS'));
+    return callback(null, false);
 };
 
-app.use(cors({
+const corsOptions = {
     origin: allowedOrigins,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-user-id', 'X-Requested-With', 'Accept', 'Origin'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-user-id', 'X-Requested-With', 'Accept', 'Origin', 'Cache-Control', 'Pragma'],
     credentials: true,
     optionsSuccessStatus: 200
-}));
+};
+
+app.use(cors(corsOptions));
 // Support large resume uploads without 413 Payload Too Large error
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
